@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Absensi Digital</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 15px;
+        }
+
+        .app-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            overflow: hidden;
+        }
+
+        .app-header {
+            background: #1e88e5;
+            color: white;
+            padding: 18px;
+            text-align: center;
+        }
+
+        .app-header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .app-header p {
+            font-size: 0.8rem;
+            opacity: 0.85;
+            margin-top: 4px;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            padding: 15px;
+            background: #fafafa;
+        }
+
+        .camera-box {
+            position: relative;
+            width: 100%;
+            height: 260px;
+            background: #111;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        video, canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            width: 170px;
+            height: 210px;
+            pointer-events: none;
+        }
+
+        .info-section {
+            padding: 0 18px 15px 18px;
+        }
+
+        .info-card {
+            background: #eef3f8;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: #333;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .btn {
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #1e88e5;
+            color: white;
+            grid-column: span 2;
+            padding: 14px;
+            font-size: 1rem;
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .status-badge {
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: none;
+        }
+
+        .status-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+
+        .status-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-card">
+    <!-- Header Aplikasi -->
+    <div class="app-header">
+        <h2>PRESENSI ONLINE</h2>
+        <p>Aplikasi Absensi GPS & Selfie</p>
+    </div>
+
+    <!-- Tampilan Kamera -->
+    <div class="camera-container">
+        <div class="camera-box">
+            <video id="webcam" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <div class="camera-overlay"></div>
+        </div>
+    </div>
+
+    <!-- Informasi Lokasi & Jam -->
+    <div class="info-section">
+        <div class="info-card">
+            <div class="info-row">
+                <span>📍 Lokasi GPS:</span>
+                <strong id="gps-status">Mencari lokasi...</strong>
+            </div>
+            <div class="info-row">
+                <span>📏 Jarak Kantor:</span>
+                <strong id="distance-status">-</strong>
+            </div>
+            <div class="info-row">
+                <span>🕒 Waktu:</span>
+                <strong id="clock">00:00:00 WIB</strong>
+            </div>
+        </div>
+
+        <!-- Tombol Aksi -->
+        <div class="btn-group">
+            <button class="btn btn-secondary" onclick="setMode('Istirahat')">Istirahat</button>
+            <button class="btn btn-secondary" onclick="setMode('Lembur')">Lembur</button>
+            <button class="btn btn-primary" onclick="kirimAbsen()">📷 MASUK / PULANG</button>
+        </div>
+
+        <!-- Status Notifikasi -->
+        <div id="status-box" class="status-badge"></div>
+    </div>
+</div>
+
+<script>
+    // Koordinat Target Kantor (Contoh: Monas Jakarta)
+    const KANTOR_LAT = -6.175392;
+    const KANTOR_LNG = 106.827153;
+    const MAX_RADIUS_METER = 100;
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const statusBox = document.getElementById('status-box');
+    let currentLat = null;
+    let currentLng = null;
+    let modeAbsen = 'Masuk/Pulang';
+
+    // 1. Jalankan Jam Real-time
+    setInterval(() => {
+        const now = new Date();
+        document.getElementById('clock').innerText = now.toLocaleTimeString('id-ID') + ' WIB';
+    }, 1000);
+
+    // 2. Inisialisasi Kamera Depan
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'user' } 
+            });
+            video.srcObject = stream;
+        } catch (err) {
+            showStatus('Gagal mengakses kamera: Pastikan izin kamera aktif.', false);
+        }
+    }
+
+    // 3. Rumus Haversine Menghitung Jarak GPS
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const rad = Math.PI / 180;
+        const dLat = (lat2 - lat1) * rad;
+        const dLon = (lon2 - lon1) * rad;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+
+    // 4. Ambil Lokasi GPS HP
+    function getLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    currentLat = position.coords.latitude;
+                    currentLng = position.coords.longitude;
+                    
+                    const distance = calculateDistance(currentLat, currentLng, KANTOR_LAT, KANTOR_LNG);
+                    
+                    document.getElementById('gps-status').innerText = 'Tersambung';
+                    document.getElementById('distance-status').innerText = Math.round(distance) + ' Meter';
+                },
+                (error) => {
+                    document.getElementById('gps-status').innerText = 'Gagal';
+                    showStatus('Gagal membaca GPS: Aktifkan Lokasi/GPS HP Anda.', false);
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+    }
+
+    function setMode(mode) {
+        modeAbsen = mode;
+        showStatus('Mode terpilih: Absen ' + mode, true);
+    }
+
+    // 5. Proses Kirim Absen
+    function kirimAbsen() {
+        if (!currentLat || !currentLng) {
+            showStatus('Mendapatkan lokasi GPS... Coba beberapa detik lagi.', false);
+            getLocation();
+            return;
+        }
+
+        const distance = calculateDistance(currentLat, currentLng, KANTOR_LAT, KANTOR_LNG);
+
+        // Ambil Gambar
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        if (distance > MAX_RADIUS_METER) {
+            showStatus(`Gagal Absen! Anda berada ${Math.round(distance)}m di luar radius kantor (${MAX_RADIUS_METER}m).`, false);
+        } else {
+            showStatus(`✅ Berhasil Absen (${modeAbsen})! Jarak: ${Math.round(distance)}m dari lokasi.`, true);
+        }
+    }
+
+    function showStatus(message, isSuccess) {
+        statusBox.style.display = 'block';
+        statusBox.innerText = message;
+        statusBox.className = 'status-badge ' + (isSuccess ? 'status-success' : 'status-error');
+    }
+
+    // Jalankan Kamera & GPS saat halaman dibuka
+    startCamera();
+    getLocation();
+</script>
+
+</body>
+</html>
